@@ -1,6 +1,7 @@
+# FILE: mia_llms_benchmark/attacks/conrecall.py (MODIFIED)
+
 import copy
 import random
-
 import datasets
 from attacks import AbstractAttack
 from attacks.utils import compute_nlloss
@@ -18,10 +19,15 @@ def make_conrecall_prefix(dataset, n_shots, perplexity_bucket=None, target_index
         dataset = dataset.filter(lambda x: x["perplexity_bucket"] == perplexity_bucket)
         datasets.enable_progress_bars()
 
-    all_indices = list(range(len(dataset)))
-    if target_index is not None:
+    # Ensure we don't sample more than available examples
+    num_available = len(dataset)
+    if target_index is not None and target_index in range(num_available):
+        all_indices = list(range(num_available))
         all_indices.remove(target_index)
+    else:
+        all_indices = list(range(num_available))
 
+    n_shots = min(n_shots, len(all_indices))
     indices = random.sample(all_indices, n_shots)
     prefixes = [dataset[i]["text"] for i in indices]
 
@@ -49,46 +55,39 @@ class ConRecallAttack(AbstractAttack):
         )
 
     def run(self, dataset: Dataset) -> Dataset:
-        ds_clone = copy.deepcopy(dataset)
+        # Create a deepcopy for building member prefixes without affecting the main dataset object
+        ds_clone = copy.deepcopy(dataset) 
+        
+        # Step 1: Calculate conditional NLLs. This part is fine.
         dataset = dataset.map(
             lambda x: self.conrecall_nlloss(x, ds_clone),
             batched=True,
             batch_size=self.config['batch_size'],
             new_fingerprint=f"{self.signature(dataset)}_v7",
         )
-        dataset = dataset.map(lambda x: {self.name: (
-            x[f'{self.name}_nm_nlloss'] - x[f'{self.name}_m_nlloss']) / x['nlloss']})
+
+        # Step 2: Calculate the final score and add column efficiently.
+        nm_nlloss = dataset[f'{self.name}_nm_nlloss']
+        m_nlloss = dataset[f'{self.name}_m_nlloss']
+        nlloss = dataset['nlloss']
+        
+        scores = [(nm - m) / (nll + 1e-9) for nm, m, nll in zip(nm_nlloss, m_nlloss, nlloss)]
+        dataset = dataset.add_column(self.name, scores)
+
         return dataset
 
     def conrecall_nlloss(self, batch, dataset):
-        if self.config["match_perplexity"]:
-            it = enumerate(zip(batch["perplexity_bucket"], batch["text"]))
-            non_member_texts = [
-                self.build_non_member_prefix(ppl_bucket) + " " + text
-                for i, (ppl_bucket, text) in it
-            ]
+        ds_members_only = dataset.filter(lambda x: x["label"] == 1, load_from_cache_file=False)
 
-            it = enumerate(zip(batch["perplexity_bucket"], batch["text"]))
-            ds_members_only = dataset.filter(lambda x: x["label"] == 1)
-            member_texts = [
-                self.build_member_prefix(
-                    perplexity_bucket=ppl_bucket,
-                    target_index=i,
-                    dataset=ds_members_only
-                ) + " " + text
-                for i, (ppl_bucket, text) in it
-            ]
+        if self.config["match_perplexity"]:
+            non_member_texts = []
+            member_texts = []
+            for i, (ppl_bucket, text) in enumerate(zip(batch["perplexity_bucket"], batch["text"])):
+                non_member_texts.append(self.build_non_member_prefix(ppl_bucket) + " " + text)
+                member_texts.append(self.build_member_prefix(i, ds_members_only, ppl_bucket) + " " + text)
         else:
             non_member_texts = [self.build_non_member_prefix() + " " + text for text in batch["text"]]
-
-            ds_members_only = dataset.filter(lambda x: x["label"] == 1)
-            member_texts = [
-                self.build_member_prefix(
-                    target_index=i,
-                    dataset=ds_members_only
-                ) + " " + text
-                for i, text in enumerate(batch["text"])
-            ]
+            member_texts = [self.build_member_prefix(i, ds_members_only) + " " + text for i, text in enumerate(batch["text"])]
 
         ret = {}
         for texts, label in [(non_member_texts, "nm"), (member_texts, "m")]:

@@ -1,3 +1,5 @@
+# FILE: mia_llms_benchmark/attacks/ratio.py (MODIFIED)
+
 from attacks import AbstractAttack
 from attacks.utils import batch_nlloss
 from datasets import Dataset
@@ -17,11 +19,16 @@ class RatioAttack(AbstractAttack):
         return reference_model, reference_tokenizer
 
     def run(self, dataset: Dataset) -> Dataset:
+        # Step 1: Calculate reference NLL. This part is fine.
         dataset = dataset.map(
             lambda x: batch_nlloss(x, self.reference_model, self.reference_tokenizer, self.reference_device, key='reference_nlloss'),
             batched=True,
             batch_size=self.config['batch_size'],
             new_fingerprint=f"{self.signature(dataset)}_v1",
         )
-        dataset = dataset.map(lambda x: {self.name: -x['nlloss'] / x['reference_nlloss']})
+        
+        # Step 2: Calculate final score and add column efficiently.
+        scores = [-nll / (rnll + 1e-9) for nll, rnll in zip(dataset['nlloss'], dataset['reference_nlloss'])]
+        dataset = dataset.add_column(self.name, scores)
+
         return dataset

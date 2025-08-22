@@ -1,5 +1,6 @@
-import random
+# FILE: mia_llms_benchmark/attacks/recall.py (MODIFIED)
 
+import random
 from attacks import AbstractAttack
 from attacks.utils import compute_nlloss
 from datasets import Dataset, load_dataset
@@ -49,18 +50,23 @@ class RecallAttack(AbstractAttack):
         )
 
     def run(self, dataset: Dataset) -> Dataset:
-        if self.config["fixed_prefix"]:
+        if self.config.get("fixed_prefix", False): # Use .get for safety
             prefixes = self.build_fixed_prefixes(dataset)
         else:
             prefixes = None
 
+        # Step 1: Calculate recall NLL. This is fine.
         dataset = dataset.map(
             lambda x: self.recall_nlloss(x, prefixes=prefixes),
             batched=True,
             batch_size=self.config['batch_size'],
             new_fingerprint=f"{self.signature(dataset)}_v2",
         )
-        dataset = dataset.map(lambda x: {self.name: x['recall_nlloss'] / x['nlloss']})
+
+        # Step 2: Calculate final score and add column efficiently.
+        scores = [rnll / (nll + 1e-9) for rnll, nll in zip(dataset['recall_nlloss'], dataset['nlloss'])]
+        dataset = dataset.add_column(self.name, scores)
+
         return dataset
 
     def recall_nlloss(self, batch, prefixes=None):

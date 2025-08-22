@@ -43,9 +43,17 @@ def get_printable_ds_name(ds_info):
     return name
 
 
+# This is the MODIFIED function for mia_llms_benchmark/main.py
+
 def init_dataset(ds_info, model, tokenizer, device, batch_size):
 
-    if "mimir_name" in ds_info:
+    # --- START of modification ---
+    if "path" in ds_info:
+        logging.info(f"Loading dataset from local path: {ds_info['path']}")
+        dataset = Dataset.load_from_disk(ds_info['path'])
+    # --- END of modification ---
+
+    elif "mimir_name" in ds_info:
         if "name" in ds_info:
             raise ValueError("Cannot specify both 'name' and 'mimir_name' in dataset config")
         dataset = load_mimir_dataset(name=ds_info["mimir_name"], split=ds_info["split"])

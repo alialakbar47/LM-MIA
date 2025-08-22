@@ -1,0 +1,86 @@
+# FILE: mia_llms_benchmark/my_evaluation_config.yaml
+
+# Global configuration
+global:
+  # IMPORTANT: Use the exact same model you used for extraction
+  target_model: "EleutherAI/gpt-neo-1.3B"
+  
+  # IMPORTANT: This section points to the local dataset you created in Step 1
+  datasets:
+    - name: "likelihood_candidates" # A descriptive name for the output table
+      path: "/content/mia_llms_benchmark/data" # Relative path from benchmark repo to your data
+      split: "train" # The default split name for custom HF datasets
+
+  batch_size: 16
+  device: "cuda:0"
+  fpr_thresholds:
+    - 0.1
+    - 0.01
+    - 0.001
+  n_bootstrap_samples: 100
+
+# --- Attack Configurations ---
+# We include all attacks from the template. You can remove any you don't want to run.
+
+loss:
+  module: loss
+
+zlib:
+  module: zlib
+
+lowercase:
+  module: lowercase
+  batch_size: 16
+
+ratio:
+  module: ratio
+  # You must provide a reference model. gpt2 is a common choice.
+  reference_model_path: "gpt2-large"
+  reference_tokenizer_path: "gpt2-large"
+  batch_size: 8 # Smaller batch size for running two models
+  device: "cuda:0"
+
+neighborhood:
+  module: neighborhood
+  batch_size: 16
+  mlm_model: 'roberta-base'
+  n_neighbors: 50
+  top_k: 10
+  is_scale_embeds: true
+  device: 'cuda:0'
+
+samia:
+  module: samia
+  rouge_version: paper
+  n: 1
+  zlib: false
+  batch_size: 4
+  prefix_ratio: 0.5
+  max_length: 1024
+  n_candidates: 10
+  temperature: 1.0
+  top_k: 50
+  top_p: 1
+ 
+pac_10:
+  module: pac
+  k_min: 0.3
+  k_max: 0.05
+  alpha: 0.3
+  num_augmentations: 10
+ 
+surp_40_2:
+  module: surp
+  k: 40
+  max_entropy: 2.0
+  batch_size: 16
+
+minkprob:
+  module: minkprob
+  k: 20
+  batch_size: 16
+
+minkplusplus:
+  module: minkplusplus
+  k: 20
+  batch_size: 16
