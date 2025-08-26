@@ -1,4 +1,4 @@
-# FILE: mia_llms_benchmark/attacks/recall.py (MODIFIED)
+# --- START OF FILE attacks/recall.py (MODIFIED) ---
 
 import random
 from attacks import AbstractAttack
@@ -20,7 +20,18 @@ def make_recall_prefix(dataset, n_shots, perplexity_bucket=None):
 class RecallAttack(AbstractAttack):
     def __init__(self, name, model, tokenizer, config):
         super().__init__(name, model, tokenizer, config)
-        self.extra_non_member_dataset = load_dataset(config['extra_non_member_dataset'], split=config['split'])
+        
+        # --- MODIFICATION START ---
+        # This section is updated to handle datasets with multiple configurations like 'wikitext'.
+        dataset_path = config['extra_non_member_dataset']
+        dataset_name = config.get('extra_non_member_config_name', None) # Safely get the new config key
+
+        self.extra_non_member_dataset = load_dataset(
+            path=dataset_path,
+            name=dataset_name,
+            split=config['split']
+        )
+        # --- MODIFICATION END ---
 
     def build_fixed_prefixes(self, target_dataset):
         if self.config["match_perplexity"]:
@@ -50,12 +61,11 @@ class RecallAttack(AbstractAttack):
         )
 
     def run(self, dataset: Dataset) -> Dataset:
-        if self.config.get("fixed_prefix", False): # Use .get for safety
+        if self.config.get("fixed_prefix", False):
             prefixes = self.build_fixed_prefixes(dataset)
         else:
             prefixes = None
 
-        # Step 1: Calculate recall NLL. This is fine.
         dataset = dataset.map(
             lambda x: self.recall_nlloss(x, prefixes=prefixes),
             batched=True,
@@ -63,7 +73,6 @@ class RecallAttack(AbstractAttack):
             new_fingerprint=f"{self.signature(dataset)}_v2",
         )
 
-        # Step 2: Calculate final score and add column efficiently.
         scores = [rnll / (nll + 1e-9) for rnll, nll in zip(dataset['recall_nlloss'], dataset['nlloss'])]
         dataset = dataset.add_column(self.name, scores)
 
@@ -88,3 +97,5 @@ class RecallAttack(AbstractAttack):
         attention_mask = tokenized['attention_mask'].to(self.device)
         losses = compute_nlloss(self.model, token_ids, attention_mask)
         return {'recall_nlloss': losses}
+
+# --- END OF FILE attacks/recall.py (MODIFIED) ---

@@ -102,3 +102,28 @@ metric:
   batch_size: 32
   prefix_len: 50 # Parameter used in MetricAttack
   z_threshold: 3.0 # Optional: You can tune this
+
+# Add these sections to your my_evaluation_config.yaml
+
+recall:
+  module: recall
+  batch_size: 16
+  # The general dataset collection on the Hub
+  extra_non_member_dataset: wikitext
+  # The new, required key for specifying the exact dataset version
+  extra_non_member_config_name: wikitext-2-raw-v1
+  split: train
+  n_shots: 5
+  match_perplexity: false
+  fixed_prefix: true
+
+conrecall:
+  module: conrecall
+  batch_size: 16
+  # The general dataset collection on the Hub
+  extra_non_member_dataset: wikitext
+  # The new, required key for specifying the exact dataset version
+  extra_non_member_config_name: wikitext-2-raw-v1
+  split: train
+  n_shots: 5
+  match_perplexity: false
