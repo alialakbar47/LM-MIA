@@ -4,7 +4,7 @@
 global:
   # IMPORTANT: Use the exact same model you used for extraction
   target_model: "EleutherAI/gpt-neo-1.3B"
-  
+
   # IMPORTANT: This section points to the local dataset you created in Step 1
   datasets:
     - name: "likelihood_candidates" # A descriptive name for the output table
@@ -43,11 +43,11 @@ ratio:
 neighborhood:
   module: neighborhood
   batch_size: 16
-  mlm_model: 'roberta-base'
+  mlm_model: "roberta-base"
   n_neighbors: 50
   top_k: 10
   is_scale_embeds: true
-  device: 'cuda:0'
+  device: "cuda:0"
 
 samia:
   module: samia
@@ -61,14 +61,14 @@ samia:
   temperature: 1.0
   top_k: 50
   top_p: 1
- 
+
 pac_10:
   module: pac
   k_min: 0.3
   k_max: 0.05
   alpha: 0.3
   num_augmentations: 10
- 
+
 surp_40_2:
   module: surp
   k: 40
@@ -84,3 +84,21 @@ minkplusplus:
   module: minkplusplus
   k: 20
   batch_size: 16
+
+suffix_recall:
+  module: suffix_recall # CRITICAL: This must match the filename suffix_recall.py
+  batch_size: 32
+  prefix_len: 50 # Parameter used in SuffixRecallAttack
+
+highconfidence:
+  module: highconfidence # CRITICAL: This must match the filename highconfidence.py
+  batch_size: 32
+  prefix_len: 50 # Parameter used in HighConfidenceAttack
+  threshold: 0.5 # Optional: You can tune this
+  factor: 0.15 # Optional: You can tune this
+
+metric:
+  module: metric # CRITICAL: This must match the filename metric.py
+  batch_size: 32
+  prefix_len: 50 # Parameter used in MetricAttack
+  z_threshold: 3.0 # Optional: You can tune this
