@@ -1,4 +1,4 @@
-# FILE: mia_llms_benchmark/attacks/conrecall.py (MODIFIED)
+# --- START OF FILE attacks/conrecall.py (MODIFIED) ---
 
 import copy
 import random
@@ -19,7 +19,6 @@ def make_conrecall_prefix(dataset, n_shots, perplexity_bucket=None, target_index
         dataset = dataset.filter(lambda x: x["perplexity_bucket"] == perplexity_bucket)
         datasets.enable_progress_bars()
 
-    # Ensure we don't sample more than available examples
     num_available = len(dataset)
     if target_index is not None and target_index in range(num_available):
         all_indices = list(range(num_available))
@@ -37,7 +36,18 @@ def make_conrecall_prefix(dataset, n_shots, perplexity_bucket=None, target_index
 class ConRecallAttack(AbstractAttack):
     def __init__(self, name, model, tokenizer, config):
         super().__init__(name, model, tokenizer, config)
-        self.extra_non_member_dataset = load_dataset(config['extra_non_member_dataset'], split=config['split'])
+        
+        # --- MODIFICATION START ---
+        # This section is updated to handle datasets with multiple configurations like 'wikitext'.
+        dataset_path = config['extra_non_member_dataset']
+        dataset_name = config.get('extra_non_member_config_name', None) # Safely get the new config key
+
+        self.extra_non_member_dataset = load_dataset(
+            path=dataset_path,
+            name=dataset_name,
+            split=config['split']
+        )
+        # --- MODIFICATION END ---
 
     def build_non_member_prefix(self, perplexity_bucket=None):
         return make_conrecall_prefix(
@@ -55,10 +65,8 @@ class ConRecallAttack(AbstractAttack):
         )
 
     def run(self, dataset: Dataset) -> Dataset:
-        # Create a deepcopy for building member prefixes without affecting the main dataset object
         ds_clone = copy.deepcopy(dataset) 
         
-        # Step 1: Calculate conditional NLLs. This part is fine.
         dataset = dataset.map(
             lambda x: self.conrecall_nlloss(x, ds_clone),
             batched=True,
@@ -66,7 +74,6 @@ class ConRecallAttack(AbstractAttack):
             new_fingerprint=f"{self.signature(dataset)}_v7",
         )
 
-        # Step 2: Calculate the final score and add column efficiently.
         nm_nlloss = dataset[f'{self.name}_nm_nlloss']
         m_nlloss = dataset[f'{self.name}_m_nlloss']
         nlloss = dataset['nlloss']
@@ -97,3 +104,5 @@ class ConRecallAttack(AbstractAttack):
             losses = compute_nlloss(self.model, token_ids, attention_mask)
             ret[f"{self.name}_{label}_nlloss"] = losses
         return ret
+
+# --- END OF FILE attacks/conrecall.py (MODIFIED) ---
