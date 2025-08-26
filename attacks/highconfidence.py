@@ -16,7 +16,7 @@ class HighConfidenceAttack(AbstractAttack):
             lambda x: self.score(x),
             batched=True,
             batch_size=self.config['batch_size'],
-            new_fingerprint=f"{self.signature(dataset)}_v1",
+            new_fingerprint=f"{self.signature(dataset)}_v2_corrected",
         )
         return dataset
 
@@ -52,11 +52,15 @@ class HighConfidenceAttack(AbstractAttack):
             loss_adjusted_reshaped = loss_adjusted_flat.view(shift_labels.size())
 
             if loss_adjusted_reshaped.shape[1] < self.prefix_len:
-                return {self.name: [100.0] * len(texts)}
-
-            loss_adjusted_suffix = loss_adjusted_reshaped[:, self.prefix_len - 1:]
-            suffix_mask = shift_attention_mask[:, self.prefix_len - 1:]
-
-            scores = (loss_adjusted_suffix * suffix_mask).sum(dim=1) / (suffix_mask.sum(dim=1) + 1e-9)
-
-        return {self.name: scores.cpu().numpy()}
+                # Assign a high loss (low score after negation) for sequences too short
+                scores = torch.full((len(texts),), 100.0, device=self.device)
+            else:
+                loss_adjusted_suffix = loss_adjusted_reshaped[:, self.prefix_len - 1:]
+                suffix_mask = shift_attention_mask[:, self.prefix_len - 1:]
+                scores = (loss_adjusted_suffix * suffix_mask).sum(dim=1) / (suffix_mask.sum(dim=1) + 1e-9)
+        
+        # CRITICAL FIX: We negate the score.
+        # This attack calculates a modified loss, where a LOWER value means more likely to be a member.
+        # The evaluation framework (AUC) expects a HIGHER score for members.
+        # Negating the loss achieves this.
+        return {self.name: -scores.cpu().numpy()}

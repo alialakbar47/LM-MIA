@@ -16,7 +16,7 @@ class MetricAttack(AbstractAttack):
             lambda x: self.score(x),
             batched=True,
             batch_size=self.config['batch_size'],
-            new_fingerprint=f"{self.signature(dataset)}_v1",
+            new_fingerprint=f"{self.signature(dataset)}_v2_corrected",
         )
         return dataset
 
@@ -34,41 +34,49 @@ class MetricAttack(AbstractAttack):
 
             shift_logits = logits[..., :-1, :].contiguous()
             shift_labels = token_ids[..., 1:].contiguous()
+            shift_attention_mask = attention_mask[..., 1:].contiguous()
 
             loss_fct = torch.nn.CrossEntropyLoss(reduction='none')
             per_token_loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
             per_token_loss = per_token_loss.view(shift_labels.size())
 
-            shift_attention_mask = attention_mask[..., 1:].contiguous()
-
             if per_token_loss.shape[1] < self.prefix_len:
-                return {self.name: [100.0] * len(texts)}
+                # Assign a high loss (low score after negation) for sequences too short
+                scores = np.full((len(texts),), -100.0)
+                return {self.name: scores}
 
             suffix_loss = per_token_loss[:, self.prefix_len - 1:]
             suffix_mask = shift_attention_mask[:, self.prefix_len - 1:]
 
+            # Vectorized implementation for efficiency and correctness
             suffix_loss_np = suffix_loss.cpu().numpy()
-            suffix_mask_np = suffix_mask.cpu().numpy()
+            suffix_mask_np = suffix_mask.cpu().numpy().astype(bool)
 
-            final_scores = []
-            for i in range(suffix_loss_np.shape[0]):
-                current_losses = suffix_loss_np[i, suffix_mask_np[i] == 1]
+            # Set masked values to NaN to ignore them in mean/std calculations
+            suffix_loss_np[~suffix_mask_np] = np.nan
+            
+            with np.errstate(invalid='ignore'): # Ignore warnings for rows that are all NaNs
+                mean = np.nanmean(suffix_loss_np, axis=1, keepdims=True)
+                std = np.nanstd(suffix_loss_np, axis=1, keepdims=True)
+            
+            floor = mean - self.z_threshold * std
+            upper = mean + self.z_threshold * std
 
-                if len(current_losses) == 0:
-                    final_scores.append(100.0)
-                    continue
+            # Replace outliers with the mean of their own sequence
+            metric_loss = np.where(
+                ((suffix_loss_np < floor) | (suffix_loss_np > upper)),
+                mean,
+                suffix_loss_np
+            )
 
-                mean = np.mean(current_losses)
-                std = np.std(current_losses)
-                floor = mean - self.z_threshold * std
-                upper = mean + self.z_threshold * std
+            with np.errstate(invalid='ignore'):
+                scores = np.nanmean(metric_loss, axis=1)
 
-                metric_loss = np.where(
-                    ((current_losses < floor) | (current_losses > upper)),
-                    mean,
-                    current_losses
-                )
+            # Handle cases where a sequence had no valid suffix tokens, resulting in NaN
+            # Assign a high loss (low score after negation) to these cases.
+            scores = np.nan_to_num(scores, nan=100.0)
 
-                final_scores.append(np.mean(metric_loss))
-
-        return {self.name: np.array(final_scores)}
+        # CRITICAL FIX: We negate the score.
+        # This attack calculates an outlier-adjusted loss. A LOWER loss indicates membership.
+        # We negate it so a HIGHER score indicates membership for the AUC calculation.
+        return {self.name: -scores}

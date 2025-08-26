@@ -8,7 +8,7 @@ global:
   # IMPORTANT: This section points to the local dataset you created in Step 1
   datasets:
     - name: "likelihood_candidates" # A descriptive name for the output table
-      path: "/content/mia_llms_benchmark/data" # Relative path from benchmark repo to your data
+      path: "/content/LM-MIA/data" # Relative path from benchmark repo to your data
       split: "train" # The default split name for custom HF datasets
 
   batch_size: 16
